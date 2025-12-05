@@ -34,6 +34,7 @@ func (r *FileReader) Read() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("Error opening file: %v", err)
 	}
+	defer file.Close()
 	info, err := file.Stat()
 	if err != nil {
 		return "", fmt.Errorf("Error getting file info: %v", err)
@@ -45,7 +46,6 @@ func (r *FileReader) Read() (string, error) {
 	if size > MaxFileSizeAllowed {
 		return "", fmt.Errorf("%s is too large", name)
 	}
-	defer file.Close()
 	r.reader = bufio.NewReader(file)
 	buffer := []byte{}
 	_, error := r.reader.Read(buffer)
@@ -56,9 +56,9 @@ func (r *FileReader) Read() (string, error) {
 }
 
 type FirstEventFileParser struct {
-	reader        FileReader
-	contents      []string
-	parsedContent []DialInstruction
+	reader         FileReader
+	contents       []string
+	parsedContents []DialInstruction
 }
 
 func (f FirstEventFileParser) readFileToBuffer() error {
@@ -90,7 +90,7 @@ func (f FirstEventFileParser) parseContent(content string) error {
 	if rotationType == "" || rotationAmount == 0 {
 		return fmt.Errorf("invalid rotation")
 	}
-	f.parsedContent = append(f.parsedContent, DialInstruction{rotationAmount, rotationType})
+	f.parsedContents = append(f.parsedContents, DialInstruction{rotationAmount, rotationType})
 	return nil
 }
 
@@ -132,5 +132,23 @@ type DialInstruction struct {
 
 type originalString string
 type DialInstructions struct {
+	parser       FirstEventFileParser
 	Instructions map[originalString]DialInstruction
+}
+
+func NewDialInstructions(parser FirstEventFileParser) DialInstructions {
+	return DialInstructions{
+		parser:       parser,
+		Instructions: make(map[originalString]DialInstruction),
+	}
+}
+
+func (d DialInstructions) Seed() {
+	d.parser.Parse()
+	for _, content := range d.parser.parsedContents {
+		d.Instructions[originalString(fmt.Sprintf("%s%d", content.typeOfRotation, content.dialRotationAmount))] = DialInstruction{
+			dialRotationAmount: content.dialRotationAmount,
+			typeOfRotation:     content.typeOfRotation,
+		}
+	}
 }
