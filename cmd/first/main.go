@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -47,9 +48,9 @@ func (r *FileReader) Read() (string, error) {
 		return "", fmt.Errorf("%s is too large", name)
 	}
 	r.reader = bufio.NewReader(file)
-	buffer := []byte{}
-	_, error := r.reader.Read(buffer)
-	if error != nil {
+	buffer := make([]byte, size)
+	_, err = r.reader.Read(buffer)
+	if err != nil {
 		return "", fmt.Errorf("Error reading file: %v", err)
 	}
 	return string(buffer), nil
@@ -61,13 +62,12 @@ type FirstEventFileParser struct {
 	parsedContents []DialInstruction
 }
 
-func (f FirstEventFileParser) readFileToBuffer() error {
-	buffer := []byte{}
-	_, error := f.reader.Read()
+func (f *FirstEventFileParser) readFileToBuffer() error {
+	content, error := f.reader.Read()
 	if error != nil {
 		return fmt.Errorf("Error reading file: %v", error)
 	}
-	f.contents = strings.Split(string(buffer), "\n")
+	f.contents = strings.Split(content, "\n")
 	return nil
 }
 
@@ -77,7 +77,7 @@ func (f FirstEventFileParser) parseContent(content string) error {
 	}
 	parseRotation := func(content string) (RotationType, int) {
 		rotationTypeString, rotationAmountString := content[0], content[1:]
-		if string(rotationTypeString) == "" || rotationAmountString == "" {
+		if len(rotationTypeString) == 0 || len(rotationAmountString) == 0 {
 			return "", 0
 		}
 		rotationAmount, err := strconv.Atoi(rotationAmountString)
@@ -94,7 +94,7 @@ func (f FirstEventFileParser) parseContent(content string) error {
 	return nil
 }
 
-func (f FirstEventFileParser) Parse() error {
+func (f *FirstEventFileParser) Parse() error {
 	if err := f.readFileToBuffer(); err != nil {
 		return fmt.Errorf("error reading file: %w", err)
 	}
@@ -143,7 +143,7 @@ func NewDialInstructions(parser FirstEventFileParser) DialInstructions {
 	}
 }
 
-func (d DialInstructions) Seed() {
+func (d *DialInstructions) Seed() {
 	d.parser.Parse()
 	for _, content := range d.parser.parsedContents {
 		d.Instructions[originalString(fmt.Sprintf("%s%d", content.typeOfRotation, content.dialRotationAmount))] = DialInstruction{
@@ -151,4 +151,28 @@ func (d DialInstructions) Seed() {
 			typeOfRotation:     content.typeOfRotation,
 		}
 	}
+}
+
+func (d DialInstructions) GetDialInstructionByString(instructionString string) DialInstruction {
+	instruction, ok := d.Instructions[originalString(instructionString)]
+	if !ok {
+		err := fmt.Sprintf("Invalid dial instruction: %s\n", instructionString)
+		fmt.Println(err)
+	}
+	return instruction
+}
+
+func (d DialInstructions) FindPassword() (int, error) {
+	if len(d.Instructions) == 0 {
+		return 0, errors.New("no instructions found")
+	}
+	var foundPasswordCounter int
+	var currentDial int
+	for _, instruction := range d.Instructions {
+		currentDial += DefaultStart + instruction.typeOfRotation.GetDialByRotationType(instruction.dialRotationAmount)
+		if currentDial == TargetDial {
+			foundPasswordCounter += 1
+		}
+	}
+	return foundPasswordCounter, nil
 }
